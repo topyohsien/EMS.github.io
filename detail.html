@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>安平路亞詳細預報</title>
+    <title>安平海象與咬況預報</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --bg: #0a192f; --card: #172a45; --highlight: #64ffda; --text: #e6f1ff; }
@@ -13,18 +13,23 @@
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px 8px; border-bottom: 1px solid #233554; text-align: center; font-size: 13px; }
         th { color: var(--highlight); background: #1d3557; }
-        .hot { background: rgba(255, 107, 107, 0.1); color: #ff6b6b; font-weight: bold; }
+        .hot { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; font-weight: bold; }
     </style>
 </head>
 <body>
     <div style="margin-bottom:15px;"><a href="map.html" style="color:var(--highlight); text-decoration:none; font-weight:bold;">← 返回地圖</a></div>
+    
     <div class="card">
-        <div id="loc-name" class="highlight" style="font-size:1.1rem;">📍 資料同步中...</div>
-        <div id="bite-status" style="margin-top:10px;">咬況預估：分析中...</div>
+        <div id="status-title" class="highlight" style="font-size:1.1rem;">📍 安平測站數據載入中...</div>
+        <div id="bite-hint" style="margin-top:10px; font-size:0.9rem;">咬況預估：<span class="highlight">正在計算流速...</span></div>
     </div>
-    <div class="card"><canvas id="tideChart" height="150"></canvas></div>
+
+    <div class="card">
+        <canvas id="tideChart" height="180"></canvas>
+    </div>
+
     <table>
-        <thead><tr><th>時間</th><th>潮高</th><th>預測</th></tr></thead>
+        <thead><tr><th>時間</th><th>潮高</th><th>類型</th><th>路亞熱點</th></tr></thead>
         <tbody id="tide-table"></tbody>
     </table>
 
@@ -32,47 +37,67 @@
         const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
         const today = new Date().toISOString().split('T')[0];
 
-        async function init() {
+        async function fetchTide() {
             try {
+                // 直接請求 F-A0021-001 (潮汐預報)
                 const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
                 const data = await res.json();
                 
-                // 深度解析邏輯
-                const locs = data.records.Location;
-                const anping = locs.find(l => l.LocationName.includes("臺南")).Station.find(s => s.StationName.includes("安平"));
-                const dailyData = anping.TideForecast.TimePeriods.filter(t => t.DateTime.startsWith(today));
+                // 針對「臺南」與「安平」進行強力匹配
+                const loc = data.records.Location.find(l => l.LocationName.includes("臺南"));
+                const sta = loc.Station.find(s => s.StationName.includes("安平"));
+                const daily = sta.TideForecast.TimePeriods.filter(t => t.DateTime.startsWith(today));
 
-                const heights = dailyData.map(d => parseInt(d.TideHeight));
-                const tideDiff = Math.max(...heights) - Math.min(...heights);
-                document.getElementById('loc-name').innerText = `📍 安平港區 (今日潮差: ${tideDiff}cm)`;
-                document.getElementById('bite-status').innerHTML = `咬況預估：<span class="highlight">${tideDiff > 100 ? "🔥 爆咬大潮" : "🎣 穩定小潮"}</span>`;
+                // 計算潮差與咬況
+                const heights = daily.map(d => parseInt(d.TideHeight));
+                const diff = Math.max(...heights) - Math.min(...heights);
+                document.getElementById('status-title').innerText = `📍 安平港 (今日潮差: ${diff}cm)`;
+                document.getElementById('bite-hint').innerHTML = diff > 100 ? "咬況預估：<span class='highlight'>🔥 大潮活躍 (適合 Jigging)</span>" : "咬況預估：<span>🎣 穩定小潮</span>";
 
-                render(dailyData);
-            } catch (e) {
-                document.getElementById('tide-table').innerHTML = '<tr><td colspan="3">❌ API 資料讀取失敗</td></tr>';
+                render(daily);
+            } catch (err) {
+                document.getElementById('tide-table').innerHTML = '<tr><td colspan="4">❌ API 讀取失敗，請確認網路</td></tr>';
             }
         }
 
         function render(list) {
             const labels = list.map(d => d.DateTime.split('T')[1].substring(0, 5));
-            const dataValues = list.map(d => d.TideHeight);
+            const heights = list.map(d => d.TideHeight);
 
             new Chart(document.getElementById('tideChart'), {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{ data: dataValues, borderColor: '#64ffda', tension: 0.4, fill: true, backgroundColor: 'rgba(100, 255, 218, 0.1)' }]
+                    datasets: [{
+                        label: '潮位',
+                        data: heights,
+                        borderColor: '#64ffda',
+                        backgroundColor: 'rgba(100, 255, 218, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
                 },
-                options: { plugins: { legend: { display: false } }, scales: { y: { display: false } } }
+                options: { 
+                    plugins: { legend: { display: false } },
+                    scales: { y: { display: false }, x: { ticks: { color: '#8892b0' } } }
+                }
             });
 
             document.getElementById('tide-table').innerHTML = list.map(d => {
                 const time = d.DateTime.split('T')[1].substring(0, 5);
-                const isGolden = time.startsWith("05") || time.startsWith("17");
-                return `<tr class="${isGolden ? 'hot' : ''}"><td>${time}</td><td>${d.TideHeight}cm</td><td>${d.TideType}</td></tr>`;
+                const isGolden = time.startsWith("05") || time.startsWith("06") || time.startsWith("17") || time.startsWith("18");
+                return `
+                    <tr class="${isGolden ? 'hot' : ''}">
+                        <td>${time}</td>
+                        <td>${d.TideHeight}cm</td>
+                        <td>${d.TideType}</td>
+                        <td>${isGolden ? '🔥 母光/黃昏' : '-'}</td>
+                    </tr>
+                `;
             }).join('');
         }
-        init();
+
+        fetchTide();
     </script>
 </body>
 </html>
