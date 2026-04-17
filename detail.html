@@ -6,66 +6,72 @@
     <title>詳細釣魚海象預報</title>
     <style>
         :root { --bg: #0a192f; --card: #172a45; --highlight: #64ffda; --text: #e6f1ff; }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 20px; }
-        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: var(--card); padding: 15px; border-radius: 10px; }
-        input[type="date"] { background: #233554; color: var(--highlight); border: 1px solid var(--highlight); padding: 5px; border-radius: 5px; }
-        table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; }
-        th, td { padding: 12px; text-align: center; border-bottom: 1px solid #233554; }
+        body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 15px; margin: 0; }
+        .back-btn { color: var(--highlight); text-decoration: none; display: inline-block; margin-bottom: 15px; font-weight: bold; }
+        .controls { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #233554; }
+        .loc-info { font-size: 1.1rem; margin-bottom: 10px; color: #ff6b6b; font-weight: bold; }
+        input[type="date"] { 
+            width: 100%; padding: 10px; border-radius: 8px; background: #233554; 
+            color: var(--highlight); border: 1px solid var(--highlight); font-size: 1rem; box-sizing: border-box;
+        }
+        table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; }
+        th, td { padding: 12px 8px; text-align: center; border-bottom: 1px solid #233554; font-size: 14px; }
         th { background: #1d3557; color: var(--highlight); }
         .tide-high { color: #ff6b6b; font-weight: bold; }
         .tide-low { color: #4dabf7; font-weight: bold; }
-        .back-btn { color: var(--highlight); text-decoration: none; margin-bottom: 15px; display: inline-block; }
     </style>
 </head>
 <body>
     <a href="map.html" class="back-btn">← 返回地圖</a>
     
     <div class="controls">
-        <div id="location-name">📍 定位讀取中...</div>
+        <div id="location-name" class="loc-info">📍 正在定位地點...</div>
         <input type="date" id="date-picker">
     </div>
 
-    <table>
+    <table id="main-table">
         <thead>
             <tr>
                 <th>時間</th>
                 <th>潮汐</th>
                 <th>潮高(cm)</th>
-                <th>風速</th>
-                <th>浪高</th>
             </tr>
         </thead>
         <tbody id="data-table">
-            </tbody>
+            <tr><td colspan="3">請選擇日期以載入資料</td></tr>
+        </tbody>
     </table>
 
     <script>
-        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A'; // 確保此 Key 有 F-A0021-001 權限
+        // 請確保此 Key 已在氣象署開通 F-A0021-001 權限
+        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A'; 
+        
         const urlParams = new URLSearchParams(window.location.search);
         const lat = urlParams.get('lat');
         const lng = urlParams.get('lng');
-
-        // 設定日期選擇器範圍 (前後一個月)
         const datePicker = document.getElementById('date-picker');
-        const today = new Date();
-        datePicker.valueAsDate = today;
+        
+        // 預設今天日期
+        const today = new Date().toISOString().split('T')[0];
+        datePicker.value = today;
+        document.getElementById('location-name').innerText = `📍 定位坐標: ${lat}, ${lng}`;
 
         async function updateTable() {
             const selectedDate = datePicker.value;
             const tableBody = document.getElementById('data-table');
-            tableBody.innerHTML = '<tr><td colspan="5">讀取詳細資料中...</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="3">⏳ 正在連線氣象署...</td></tr>';
 
             try {
-                // 這裡呼叫氣象署未來一個月潮汐 API
-                const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
-                const data = await res.json();
+                // 抓取未來 1 個月潮汐預報資料
+                const response = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}&format=JSON`);
+                const data = await response.json();
                 
-                // 邏輯：從 API 篩選出該日期、該地點的 24 小時數值
+                // 找出台南安平地區資料 (可根據 lat/lng 判斷，目前固定為台南安平)
                 const tainan = data.records.Location.find(l => l.LocationName === "臺南市");
-                const anping = tainan.Station.find(s => s.StationName === "安平") || tainan.Station[0];
+                const station = tainan.Station.find(s => s.StationName === "安平") || tainan.Station[0];
                 
-                // 過濾出選定日期的所有時段
-                const dailyData = anping.TideForecast.TimePeriods.filter(t => t.DateTime.includes(selectedDate));
+                // 過濾出選擇日期的資料
+                const dailyData = station.TideForecast.TimePeriods.filter(t => t.DateTime.startsWith(selectedDate));
 
                 if (dailyData.length > 0) {
                     tableBody.innerHTML = dailyData.map(t => `
@@ -73,14 +79,13 @@
                             <td>${t.DateTime.split('T')[1].substring(0, 5)}</td>
                             <td class="${t.TideType.includes('滿') ? 'tide-high' : 'tide-low'}">${t.TideType}</td>
                             <td>${t.TideHeight}</td>
-                            <td>-</td> <td>-</td>
                         </tr>
                     `).join('');
                 } else {
-                    tableBody.innerHTML = '<tr><td colspan="5">此日期暫無預報資料</td></tr>';
+                    tableBody.innerHTML = '<tr><td colspan="3">❌ 該日期無預報資料(僅限前後一個月)</td></tr>';
                 }
-            } catch (e) {
-                tableBody.innerHTML = '<tr><td colspan="5">讀取失敗，請確認 API 權限</td></tr>';
+            } catch (error) {
+                tableBody.innerHTML = '<tr><td colspan="3" style="color:#ffbb33">⚠️ 讀取失敗：請檢查 API Key 權限或網路連線</td></tr>';
             }
         }
 
