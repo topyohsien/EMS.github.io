@@ -30,34 +30,43 @@
     </div>
 
     <script>
-        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
-        async function fetchWeather() {
-            try {
-                // 採用預報資料 API
-                const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-077?Authorization=${API_KEY}&locationName=安平區&elementName=T,WS,WD,WeatherDescription,RH`);
-                const data = await res.json();
-                
-                if(!data.records.locations[0]) throw new Error('無資料');
-                
-                const elements = data.records.locations[0].location[0].weatherElement;
-                const findVal = (name) => {
-                    const el = elements.find(e => e.elementName === name);
-                    return el ? el.time[0].elementValue[0].value : '--';
-                };
+const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
 
-                document.getElementById('temp').innerText = findVal('T') + '°C';
-                document.getElementById('wind').innerText = findVal('WS') + ' m/s';
-                document.getElementById('dir').innerText = findVal('WD');
-                document.getElementById('hum').innerText = findVal('RH') + '%';
-                document.getElementById('desc').innerText = findVal('WeatherDescription').split('。')[0];
-                document.getElementById('status').innerText = '最後更新：' + new Date().toLocaleTimeString();
-            } catch (err) {
-                document.getElementById('status').innerText = '抓取失敗，請檢查 API 授權碼';
-                console.error(err);
-            }
+async function fetchWeather() {
+    const statusEl = document.getElementById('status');
+    try {
+        statusEl.innerText = '連線中...';
+        const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-077?Authorization=${API_KEY}&locationName=安平區`);
+        const data = await res.json();
+        
+        if (data.success !== "true") {
+            statusEl.innerText = 'API 授權碼無效 (Invalid Key)';
+            return;
         }
-        fetchWeather();
-        setInterval(fetchWeather, 600000); // 10分鐘更新一次
+
+        const location = data.records.locations[0].location[0];
+        const elements = location.weatherElement;
+        
+        const findVal = (name) => {
+            const el = elements.find(e => e.elementName === name);
+            // 抓取最接近現在時間的數據
+            return el && el.time[0] ? el.time[0].elementValue[0].value : '--';
+        };
+
+        document.getElementById('temp').innerText = findVal('T') + '°C';
+        document.getElementById('wind').innerText = findVal('WS') + ' m/s';
+        document.getElementById('dir').innerText = findVal('WD');
+        document.getElementById('hum').innerText = findVal('RH') + '%';
+        document.getElementById('desc').innerText = findVal('WeatherDescription').split('。')[0];
+        
+        statusEl.innerText = '更新成功：' + new Date().toLocaleTimeString();
+    } catch (err) {
+        statusEl.innerText = '網路連線異常，請檢查手機訊號';
+        console.error(err);
+    }
+}
+fetchWeather();
+
     </script>
 </body>
 </html>
