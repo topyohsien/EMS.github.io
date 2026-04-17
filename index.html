@@ -18,7 +18,7 @@
 <body>
     <div class="header">
         <h2 style="margin:0;">🎣 安平觀測站即時海象</h2>
-        <div id="status">正在同步氣象署數據...</div>
+        <div id="status">同步中...</div>
     </div>
     <div class="grid">
         <div class="card"><div class="label">氣溫</div><div id="temp" class="value">--</div></div>
@@ -39,8 +39,8 @@
                 const res = await fetch(url);
                 const data = await res.json();
                 
-                // 確保 API 回傳成功且有資料
-                if (data.success === "true" && data.records.Station.length > 0) {
+                // 改用更寬鬆的判斷條件，確保進入解析
+                if (data.records && data.records.Station && data.records.Station.length > 0) {
                     const station = data.records.Station[0];
                     const weather = station.WeatherElement;
 
@@ -54,7 +54,10 @@
                     document.getElementById('dir').innerText = (weather.WindDirection || '--') + '°';
                     
                     // 4. 雨量 (位於 Now -> Precipitation)
-                    const rainVal = weather.Now ? weather.Now.Precipitation : '0.0';
+                    let rainVal = '0.0';
+                    if (weather.Now && weather.Now.Precipitation !== undefined) {
+                        rainVal = weather.Now.Precipitation;
+                    }
                     document.getElementById('rain').innerText = rainVal + ' mm';
                     
                     // 更新時間顯示
@@ -62,18 +65,16 @@
                     statusEl.innerText = '最後更新：' + obsTime;
                     statusEl.style.color = '#64ffda';
                 } else {
-                    statusEl.innerText = '測站維護中或 API 資料更新中';
+                    statusEl.innerText = 'API 回傳格式異常，請檢查測站 ID';
                 }
             } catch (err) {
-                statusEl.innerText = '資料路徑載入中，請重新整理頁面';
+                statusEl.innerText = '連線超時，請檢查網路狀態';
                 console.error('Fetch Error:', err);
             }
         }
 
-        // 啟動抓取
         fetchAnping();
-        
-        // 每 5 分鐘自動刷新一次數據
+        // 每 5 分鐘自動刷新
         setInterval(fetchAnping, 300000);
     </script>
 </body>
