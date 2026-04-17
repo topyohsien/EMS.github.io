@@ -45,7 +45,7 @@
             const popupHtml = `
                 <div class="info-title">GPS: ${lat}, ${lng}</div>
                 <div id="sun-box" class="info-row">🌅 日出日落讀取中...</div>
-                <div id="weather-box" class="info-row">📡 即時氣壓讀取中...</div>
+                <div id="weather-box" class="info-row">📡 氣象觀測連線中...</div>
                 <div id="tide-box" class="info-row">🌊 潮汐預報連線中...</div>
                 <a href="detail.html?lat=${lat}&lng=${lng}" class="detail-btn">📊 查看 24h 詳細釣魚資訊</a>
             `;
@@ -59,8 +59,22 @@
                     document.getElementById('sun-box').innerHTML = `🌅 日出 <span class="val">${sunrise}</span> | 日落 <span class="val">${sunset}</span>`;
                 });
 
-            // 2. 氣象資料 (使用安平測站)
+            // 2. 即時氣象
             fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${API_KEY}&stationId=C0X090`)
                 .then(res => res.json()).then(data => {
                     const w = data.records.Station[0].WeatherElement;
-                    document.getElementById('weather-box').innerHTML = `📡 風速 <span class="
+                    document.getElementById('weather-box').innerHTML = `📡 風速 <span class="val">${w.WindSpeed} m/s</span> | 氣溫 <span class="val">${w.AirTemperature}°C</span>`;
+                });
+
+            // 3. 潮汐簡報
+            fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`)
+                .then(res => res.json()).then(data => {
+                    const tainan = data.records.Location.find(loc => loc.LocationName.includes("臺南"));
+                    const anping = tainan.Station.find(st => st.StationName.includes("安平"));
+                    const nextTide = anping.TideForecast.TimePeriods.find(t => new Date(t.DateTime) > new Date());
+                    document.getElementById('tide-box').innerHTML = `🌊 下次 <span class="val">${nextTide.TideType}</span>：${nextTide.DateTime.split('T')[1].substring(0, 5)}`;
+                }).catch(() => { document.getElementById('tide-box').innerHTML = "⚠️ 潮汐權限確認中"; });
+        }
+    </script>
+</body>
+</html>
