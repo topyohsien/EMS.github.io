@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>詳細釣魚海象預報</title>
+    <title>路亞岸拋詳細預報</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --bg: #0a192f; --card: #172a45; --highlight: #64ffda; --text: #e6f1ff; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 15px; margin: 0; }
         .back-btn { color: var(--highlight); text-decoration: none; display: inline-block; margin-bottom: 15px; font-weight: bold; }
-        
-        /* 頂部狀態欄：修復定位顯示 */
         .controls { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #233554; }
         .loc-info { font-size: 1.1rem; margin-bottom: 10px; color: #ff6b6b; font-weight: bold; }
         input[type="date"] { 
@@ -18,15 +16,15 @@
             color: var(--highlight); border: 1px solid var(--highlight); font-size: 1rem; box-sizing: border-box;
         }
 
-        /* 魚訊圖表區塊 */
-        .chart-container { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 20px; border: 1px solid #233554; position: relative; }
-        .fish-icons { font-size: 1.5rem; text-align: right; color: var(--highlight); margin-bottom: 5px; }
+        /* 魚訊儀表板 */
+        .chart-container { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 20px; border: 1px solid #233554; }
+        .lure-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; font-size: 0.85rem; color: #8892b0; }
+        .lure-val { color: var(--highlight); font-weight: bold; }
         
         table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; }
-        th, td { padding: 12px 8px; text-align: center; border-bottom: 1px solid #233554; font-size: 14px; }
+        th, td { padding: 12px 8px; text-align: center; border-bottom: 1px solid #233554; font-size: 13px; }
         th { background: #1d3557; color: var(--highlight); }
-        .tide-high { color: #ff6b6b; font-weight: bold; }
-        .tide-low { color: #4dabf7; font-weight: bold; }
+        .best-time { background: rgba(100, 255, 218, 0.1); color: var(--highlight); font-weight: bold; }
     </style>
 </head>
 <body>
@@ -35,19 +33,32 @@
     <div class="controls">
         <div id="location-name" class="loc-info">📍 正在讀取坐標...</div>
         <input type="date" id="date-picker">
+        
+        <div class="lure-info">
+            <div>今日潮差：<span id="tide-diff" class="lure-val">--</span> cm</div>
+            <div>流速預估：<span id="current-speed" class="lure-val">--</span></div>
+            <div>母光時間：<span id="sunrise-val" class="lure-val">--</span></div>
+            <div>黃昏時刻：<span id="sunset-val" class="lure-val">--</span></div>
+        </div>
     </div>
 
     <div class="chart-container">
-        <div class="fish-icons" id="fish-rank">🐟🐟🐟</div>
-        <canvas id="tideChart"></canvas>
+        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+            <span>🎣 路亞活躍活躍預測</span>
+            <span id="fish-rank" style="font-size:1.2rem;">🐟🐟🐟</span>
+        </div>
+        <canvas id="lureChart"></canvas>
+        <div style="font-size:0.75rem; color:#8892b0; margin-top:10px; text-align:center;">
+            *曲線越高代表餌魚受流帶動越明顯，青物進場機率越高
+        </div>
     </div>
 
     <table id="main-table">
         <thead>
             <tr>
                 <th>時間</th>
-                <th>潮汐</th>
-                <th>潮高(cm)</th>
+                <th>潮汐狀態</th>
+                <th>活躍度</th>
             </tr>
         </thead>
         <tbody id="data-table">
@@ -56,102 +67,100 @@
     </table>
 
     <script>
-        // 1. 請確保此 Key 已開通 F-A0021-001 權限
         const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A'; 
-        
-        // 2. 解析網址參數 (修復定位不到的問題)
         const urlParams = new URLSearchParams(window.location.search);
         const lat = urlParams.get('lat');
         const lng = urlParams.get('lng');
         const datePicker = document.getElementById('date-picker');
         let myChart = null;
 
-        // 預設日期設為今天
-        const today = new Date().toISOString().split('T')[0];
-        datePicker.value = today;
+        datePicker.value = new Date().toISOString().split('T')[0];
 
-        // 檢查座標是否存在
         if (lat && lng) {
-            document.getElementById('location-name').innerText = `📍 坐標: ${lat}, ${lng}`;
+            document.getElementById('location-name').innerText = `📍 安平釣區 (${lat}, ${lng})`;
             updatePage();
         } else {
-            document.getElementById('location-name').innerText = "❌ 找不到座標，請從地圖長按進入";
+            document.getElementById('location-name').innerText = "❌ 座標錯誤";
         }
 
         async function updatePage() {
-            const selectedDate = datePicker.value;
-            const tableBody = document.getElementById('data-table');
-            tableBody.innerHTML = '<tr><td colspan="3">⏳ 正在載入資料...</td></tr>';
-            
             try {
-                // 抓取未來 1 個月潮汐資料
-                const response = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
-                const data = await response.json();
-                
-                // 找出該地區資料 (預設顯示臺南市安平，可根據 lat/lng 擴展判斷邏輯)
-                const tainan = data.records.Location.find(l => l.LocationName === "臺南市");
-                const station = tainan.Station.find(s => s.StationName === "安平") || tainan.Station[0];
-                
-                // 過濾出所選日期的時間段資料
-                const dailyData = station.TideForecast.TimePeriods.filter(t => t.DateTime.startsWith(selectedDate));
+                // 1. 抓取潮汐資料 (F-A0021-001)
+                const tideRes = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
+                const tideData = await tideRes.json();
+                const station = tideData.records.Location.find(l => l.LocationName === "臺南市").Station.find(s => s.StationName === "安平");
+                const dailyTide = station.TideForecast.TimePeriods.filter(t => t.DateTime.startsWith(datePicker.value));
 
-                if (dailyData.length > 0) {
-                    // 更新表格內容
-                    tableBody.innerHTML = dailyData.map(t => `
-                        <tr>
-                            <td>${t.DateTime.split('T')[1].substring(0, 5)}</td>
-                            <td class="${t.TideType.includes('滿') ? 'tide-high' : 'tide-low'}">${t.TideType}</td>
-                            <td>${t.TideHeight}</td>
-                        </tr>
-                    `).join('');
+                // 2. 抓取日出日落 (模擬路亞黃金母光時刻)
+                const sunRes = await fetch(`https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&formatted=0`);
+                const sunData = await sunRes.json();
+                const sunrise = new Date(sunData.results.sunrise).toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'});
+                const sunset = new Date(sunData.results.sunset).toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'});
 
-                    // 繪製魚訊曲線
-                    drawChart(dailyData);
-                    
-                    // 計算潮差來給予魚訊等級 (潮差大 = 魚訊旺)
-                    const heights = dailyData.map(d => parseInt(d.TideHeight));
-                    const diff = Math.max(...heights) - Math.min(...heights);
-                    document.getElementById('fish-rank').innerText = diff > 80 ? '🐟🐟🐟' : '🐟🐟';
-                } else {
-                    tableBody.innerHTML = '<tr><td colspan="3">❌ 該日期無預報(僅限一個月內)</td></tr>';
-                }
+                document.getElementById('sunrise-val').innerText = sunrise;
+                document.getElementById('sunset-val').innerText = sunset;
+
+                // 3. 邏輯計算：路亞路徑與活躍度
+                const heights = dailyTide.map(d => parseInt(d.TideHeight));
+                const diff = Math.max(...heights) - Math.min(...heights);
+                document.getElementById('tide-diff').innerText = diff;
+                
+                // 判斷流速 (大潮 = 強流)
+                document.getElementById('current-speed').innerText = diff > 100 ? "極快 (爆發)" : (diff > 60 ? "穩定 (佳)" : "緩慢 (悶)");
+
+                renderLureContent(dailyTide, sunrise, sunset);
             } catch (error) {
-                tableBody.innerHTML = '<tr><td colspan="3" style="color:#ffbb33">⚠️ 讀取失敗，請檢查 API Key 權限</td></tr>';
+                document.getElementById('data-table').innerHTML = '<tr><td colspan="3">API 權限不足，請檢查訂閱</td></tr>';
             }
         }
 
-        // 繪圖函式：模仿截圖中的波浪線條
-        function drawChart(dailyData) {
-            const ctx = document.getElementById('tideChart').getContext('2d');
-            const labels = dailyData.map(d => d.DateTime.split('T')[1].substring(0, 5));
-            const dataValues = dailyData.map(d => d.TideHeight);
+        function renderLureContent(dailyTide, sunrise, sunset) {
+            const labels = dailyTide.map(d => d.DateTime.split('T')[1].substring(0, 5));
+            const activityData = dailyTide.map((d, i) => {
+                let score = 50; // 基礎分
+                const time = d.DateTime.split('T')[1].substring(0, 5);
+                
+                // 滿乾潮前後是路亞黃金期 (流水發動)
+                score += 30; 
+                
+                // 母光/黃昏加成 (路亞關鍵期)
+                if (time.startsWith(sunrise.substring(0,2)) || time.startsWith(sunset.substring(0,2))) score += 20;
+                
+                return score;
+            });
 
+            // 繪製曲線
+            const ctx = document.getElementById('lureChart').getContext('2d');
             if (myChart) myChart.destroy();
-
             myChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [{
-                        data: dataValues,
+                        label: '路亞活躍度',
+                        data: activityData,
                         borderColor: '#64ffda',
-                        backgroundColor: 'rgba(100, 255, 218, 0.15)',
-                        borderWidth: 3,
-                        tension: 0.4, // 關鍵：讓線條平滑呈波浪狀
+                        backgroundColor: 'rgba(100, 255, 218, 0.2)',
+                        tension: 0.4,
                         fill: true,
-                        pointBackgroundColor: '#ff6b6b',
-                        pointRadius: 4
+                        pointRadius: 6,
+                        pointBackgroundColor: (context) => context.raw > 80 ? '#ff6b6b' : '#64ffda'
                     }]
                 },
                 options: {
-                    responsive: true,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { display: true, grid: { color: '#233554' }, ticks: { color: '#8892b0' } },
-                        x: { ticks: { color: '#8892b0' } }
-                    }
+                    scales: { y: { display: false }, x: { ticks: { color: '#8892b0' } } },
+                    plugins: { legend: { display: false } }
                 }
             });
+
+            // 更新表格
+            document.getElementById('data-table').innerHTML = dailyTide.map((t, i) => `
+                <tr class="${activityData[i] > 80 ? 'best-time' : ''}">
+                    <td>${labels[i]}</td>
+                    <td>${t.TideType}</td>
+                    <td>${activityData[i] > 80 ? '🔥 極佳' : '🎣 普通'}</td>
+                </tr>
+            `).join('');
         }
 
         datePicker.addEventListener('change', updatePage);
