@@ -28,35 +28,43 @@
     </div>
 
     <script>
-        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
+const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
 
-        async function fetchObservation() {
-            const statusEl = document.getElementById('status');
-            try {
-                // 改用觀測資料 API (安平站代碼 C0X090)
-                const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${API_KEY}&StationId=C0X090`);
-                const data = await res.json();
-                
-                if (data.success !== "true") {
-                    statusEl.innerText = 'API 異常，請確認氣象署官網 Key 狀態';
-                    return;
-                }
+async function fetchWeather() {
+    const statusEl = document.getElementById('status');
+    try {
+        statusEl.innerText = '連線中...';
+        // 改用 O-A0003-001 (自動氣象站觀測) 
+        const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${API_KEY}&StationId=C0X090`;
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.success === "true" && data.records.Station && data.records.Station.length > 0) {
+            const obs = data.records.Station[0].WeatherElement;
+            const time = data.records.Station[0].ObsTime.DateTime;
 
-                const station = data.records.Station[0];
-                const obs = station.WeatherElement;
-
-                document.getElementById('temp').innerText = obs.AirTemperature + '°C';
-                document.getElementById('wind').innerText = obs.WindSpeed + ' m/s';
-                document.getElementById('dir').innerText = obs.WindDirection + '°';
-                document.getElementById('rain').innerText = obs.Now.Precipitation + ' mm';
-                
-                statusEl.innerText = '最後更新：' + station.ObsTime.DateTime;
-            } catch (err) {
-                statusEl.innerText = '連線失敗，可能是 API 尚未開通';
-                console.error(err);
-            }
+            document.getElementById('temp').innerText = (obs.AirTemperature || '--') + '°C';
+            document.getElementById('wind').innerText = (obs.WindSpeed || '--') + ' m/s';
+            document.getElementById('dir').innerText = (obs.WindDirection || '--') + '°';
+            document.getElementById('hum').innerText = (obs.RelativeHumidity || '--') + '%';
+            document.getElementById('desc').innerText = '安平觀測站即時資料';
+            
+            statusEl.innerText = '最後同步：' + time.split('T')[1].substring(0, 5);
+        } else {
+            statusEl.innerText = 'API 回傳格式錯誤，請稍後再試';
         }
-        fetchObservation();
+    } catch (err) {
+        // 如果還是連線異常，試著在網址後加一個隨機數防止快取
+        statusEl.innerText = '連線異常，氣象局伺服器忙碌中';
+        console.error('Debug Info:', err);
+    }
+}
+
+fetchWeather();
+// 釣魚不需要秒更，設定 5 分鐘跑一次就好
+setInterval(fetchWeather, 300000);
+
     </script>
 </body>
 </html>
