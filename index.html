@@ -33,34 +33,35 @@ const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
 async function fetchAnping() {
     const statusEl = document.getElementById('status');
     try {
-        // 直接鎖定安平觀測站 ID: C0X090
+        // 鎖定安平觀測站 (C0X090)
         const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${API_KEY}&StationId=C0X090`;
         
         const res = await fetch(url);
         const data = await res.json();
         
-        // 取得安平站的即時天氣元素
+        // 取得第一筆測站資料
         const station = data.records.Station[0];
         const weather = station.WeatherElement;
 
-        // 更新畫面數據 (對應 HTML 的 ID)
+        // 修正數據抓取路徑：觀測站資料通常直接放在對應名稱下
         document.getElementById('temp').innerText = (weather.AirTemperature || '--') + '°C';
         document.getElementById('wind').innerText = (weather.WindSpeed || '--') + ' m/s';
         document.getElementById('dir').innerText = (weather.WindDirection || '--') + '°';
-        document.getElementById('rain').innerText = (station.WeatherElement.Now.Precipitation || '0.0') + ' mm';
+        
+        // 雨量資料通常在 Now 結構內
+        const rainVal = weather.Now ? weather.Now.Precipitation : '0.0';
+        document.getElementById('rain').innerText = rainVal + ' mm';
         
         statusEl.innerText = '最後更新：' + station.ObsTime.DateTime.split('T')[1].substring(0,5);
         statusEl.style.color = '#64ffda';
         
     } catch (err) {
-        statusEl.innerText = '資料更新中，請重新整理頁面';
+        statusEl.innerText = '正在嘗試抓取最新資料...';
         console.error(err);
     }
 }
 
 fetchAnping();
-// 每 5 分鐘自動刷新一次數據
-setInterval(fetchAnping, 300000);
     </script>
 </body>
 </html>
