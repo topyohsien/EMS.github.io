@@ -34,70 +34,40 @@
     </table>
 
     <script>
-        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
-        const today = new Date().toISOString().split('T')[0];
-
         async function fetchTide() {
-            try {
-                // 直接請求 F-A0021-001 (潮汐預報)
-                const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
-                const data = await res.json();
-                
-                // 針對「臺南」與「安平」進行強力匹配
-                const loc = data.records.Location.find(l => l.LocationName.includes("臺南"));
-                const sta = loc.Station.find(s => s.StationName.includes("安平"));
-                const daily = sta.TideForecast.TimePeriods.filter(t => t.DateTime.startsWith(today));
+    try {
+        const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
+        const data = await res.json();
+        
+        // 1. 找到安平測站 (氣象署結構為 tideForecasts.location)
+        const locations = data.records.tideForecasts.location;
+        const anping = locations.find(l => l.locationName.includes("臺南") || l.stationName.includes("安平"));
 
-                // 計算潮差與咬況
-                const heights = daily.map(d => parseInt(d.TideHeight));
-                const diff = Math.max(...heights) - Math.min(...heights);
-                document.getElementById('status-title').innerText = `📍 安平港 (今日潮差: ${diff}cm)`;
-                document.getElementById('bite-hint').innerHTML = diff > 100 ? "咬況預估：<span class='highlight'>🔥 大潮活躍 (適合 Jigging)</span>" : "咬況預估：<span>🎣 穩定小潮</span>";
+        if (!anping) throw new Error("找不到安平測站數據");
 
-                render(daily);
-            } catch (err) {
-                document.getElementById('tide-table').innerHTML = '<tr><td colspan="4">❌ API 讀取失敗，請確認網路</td></tr>';
-            }
-        }
+        // 2. 取得今日資料 (注意欄位是 tideTime)
+        const allPeriods = anping.tideForecast.tidePeriod;
+        const daily = allPeriods.filter(p => p.tideTime.startsWith(today));
 
-        function render(list) {
-            const labels = list.map(d => d.DateTime.split('T')[1].substring(0, 5));
-            const heights = list.map(d => d.TideHeight);
+        // 3. 計算潮差
+        const heights = daily.map(d => parseInt(d.tideHeight));
+        const maxH = Math.max(...heights);
+        const minH = Math.min(...heights);
+        const diff = maxH - minH;
 
-            new Chart(document.getElementById('tideChart'), {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: '潮位',
-                        data: heights,
-                        borderColor: '#64ffda',
-                        backgroundColor: 'rgba(100, 255, 218, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: { 
-                    plugins: { legend: { display: false } },
-                    scales: { y: { display: false }, x: { ticks: { color: '#8892b0' } } }
-                }
-            });
+        // 更新 UI
+        document.getElementById('status-title').innerText = `📍 安平港 (今日潮差: ${diff}cm)`;
+        document.getElementById('bite-hint').innerHTML = diff > 100 
+            ? "咬況預估：<span class='highlight'>🔥 大潮活躍 (適合路亞/青物)</span>" 
+            : "咬況預估：<span>🎣 穩定小潮 (適合底棲)</span>";
 
-            document.getElementById('tide-table').innerHTML = list.map(d => {
-                const time = d.DateTime.split('T')[1].substring(0, 5);
-                const isGolden = time.startsWith("05") || time.startsWith("06") || time.startsWith("17") || time.startsWith("18");
-                return `
-                    <tr class="${isGolden ? 'hot' : ''}">
-                        <td>${time}</td>
-                        <td>${d.TideHeight}cm</td>
-                        <td>${d.TideType}</td>
-                        <td>${isGolden ? '🔥 母光/黃昏' : '-'}</td>
-                    </tr>
-                `;
-            }).join('');
-        }
+        render(daily);
+    } catch (err) {
+        console.error("錯誤詳情:", err);
+        document.getElementById('tide-table').innerHTML = '<tr><td colspan="4">❌ API 讀取失敗，請檢查網路或金鑰</td></tr>';
+    }
+}
 
-        fetchTide();
     </script>
 </body>
 </html>
