@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安平釣點地圖工具</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --bg: #0a192f; --card: #172a45; --text: #64ffda; }
+        body, html { margin: 0; padding: 0; height: 100%; background: var(--bg); color: white; }
+        #map { height: 100%; width: 100%; }
+        .popup-card { color: #0a192f; min-width: 180px; }
+        .popup-card b { color: #d11141; }
+        .info-box { font-size: 0.9rem; line-height: 1.6; }
+        #instructions { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(23, 42, 69, 0.9); padding: 8px 15px; border-radius: 20px; border: 1px solid var(--text); font-size: 0.8rem; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <div id="instructions">📍 長按地圖任意位置查看海象</div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
+        
+        // 1. 初始化地圖 (預設中心點在安平南堤附近)
+        const map = L.map('map').setView([22.992, 120.150], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // 2. 處理長按邏輯 (手機長按 = contextmenu 事件)
+        map.on('contextmenu', function(e) {
+            const lat = e.latlng.lat.toFixed(4);
+            const lng = e.latlng.lng.toFixed(4);
+            
+            fetchSeaData(lat, lng, e.latlng);
+        });
+
+        // 3. 抓取日出與潮汐資料
+        async function fetchSeaData(lat, lng, latlng) {
+            let infoHtml = `<div class="popup-card">
+                <div class="info-box">
+                    <b>GPS:</b> ${lat}, ${lng}<br>
+                    <hr>
+                    <span id="sun-data">載入日出中...</span><br>
+                    <span id="tide-data">載入潮汐中...</span>
+                </div>
+            </div>`;
+
+            const popup = L.popup()
+                .setLatLng(latlng)
+                .setContent(infoHtml)
+                .openOn(map);
+
+            // 抓取日出時間 (公開 API, 無須 Key)
+            try {
+                const sunRes = await fetch(`https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&formatted=0`);
+                const sunData = await sunRes.json();
+                const sunrise = new Date(sunData.results.sunrise).toLocaleTimeString('zh-TW', {hour: '2-digit', minute:'2-digit'});
+                const sunset = new Date(sunData.results.sunset).toLocaleTimeString('zh-TW', {hour: '2-digit', minute:'2-digit'});
+                document.getElementById('sun-data').innerHTML = `🌅 日出: ${sunrise} | 🌇 日落: ${sunset}`;
+            } catch (err) {
+                document.getElementById('sun-data').innerText = "日出資料抓取失敗";
+            }
+
+            // 抓取潮汐資料 (氣象署 API)
+            try {
+                // 注意：潮汐 API 建議抓取「未來三日」資料，這裡抓取台南區域
+                const tideUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}&locationName=臺南市`;
+                const tideRes = await fetch(tideUrl);
+                const tideData = await tideRes.json();
+                
+                // 找出最接近現在的滿乾潮時間
+                const now = new Date();
+                const timeData = tideData.records.Location[0].Station.TideForecast.TimePeriods;
+                const nextTide = timeData.find(t => new Date(t.DateTime) > now);
+
+                if (nextTide) {
+                    const tideTime = nextTide.DateTime.split('T')[1].substring(0,5);
+                    document.getElementById('tide-data').innerHTML = `🌊 下次潮汐: <b>${nextTide.TideType}</b> (${tideTime})`;
+                } else {
+                    document.getElementById('tide-data').innerText = "暫無即時潮汐預報";
+                }
+            } catch (err) {
+                document.getElementById('tide-data').innerText = "潮汐資料需透過地點查詢";
+            }
+        }
+    </script>
+</body>
+</html>
