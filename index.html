@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>安平釣魚面板-觀測站版</title>
+    <title>安平釣魚即時海象</title>
     <style>
         :root { --bg: #0a192f; --card: #172a45; --text: #64ffda; }
         body { font-family: sans-serif; background: var(--bg); color: white; padding: 15px; margin: 0; }
@@ -28,41 +28,42 @@
     </div>
 
     <script>
-const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
+        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
 
-async function fetchAnping() {
-    const statusEl = document.getElementById('status');
-    try {
-        // 鎖定安平觀測站 (C0X090)
-        const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${API_KEY}&StationId=C0X090`;
-        
-        const res = await fetch(url);
-        const data = await res.json();
-        
-        // 取得測站與天氣要素
-        const station = data.records.Station[0];
-        const weather = station.WeatherElement;
+        async function fetchAnping() {
+            const statusEl = document.getElementById('status');
+            try {
+                // 鎖定安平觀測站 (C0X090)
+                const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${API_KEY}&StationId=C0X090`;
+                
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                // 取得測站資料 (API 確定已放行)
+                const station = data.records.Station[0];
+                const weather = station.WeatherElement;
 
-        // 核心修正：觀測站 API 的欄位名稱首字母是大寫
-        document.getElementById('temp').innerText = (weather.AirTemperature || '--') + '°C';
-        document.getElementById('wind').innerText = (weather.WindSpeed || '--') + ' m/s';
-        document.getElementById('dir').innerText = (weather.WindDirection || '--') + '°';
-        
-        // 修正雨量抓取路徑：是在 Now 結構下的 Precipitation
-        const rainVal = station.WeatherElement.Now ? station.WeatherElement.Now.Precipitation : '0.0';
-        document.getElementById('rain').innerText = rainVal + ' mm';
-        
-        statusEl.innerText = '最後更新：' + station.ObsTime.DateTime.split('T')[1].substring(0,5);
-        statusEl.style.color = '#64ffda';
-        
-    } catch (err) {
-        statusEl.innerText = '資料路徑載入中，請稍候...';
-        console.error(err);
-    }
-}
+                // 更新畫面數據 (精確對應觀測站 JSON 欄位)
+                document.getElementById('temp').innerText = (weather.AirTemperature || '--') + '°C';
+                document.getElementById('wind').innerText = (weather.WindSpeed || '--') + ' m/s';
+                document.getElementById('dir').innerText = (weather.WindDirection || '--') + '°';
+                
+                // 處理雨量資料路徑
+                const rainVal = weather.Now ? weather.Now.Precipitation : '0.0';
+                document.getElementById('rain').innerText = rainVal + ' mm';
+                
+                statusEl.innerText = '最後更新：' + station.ObsTime.DateTime.split('T')[1].substring(0,5);
+                statusEl.style.color = '#64ffda';
+                
+            } catch (err) {
+                statusEl.innerText = '資料路徑載入中，請重新整理頁面';
+                console.error(err);
+            }
+        }
 
-fetchAnping();
-
+        fetchAnping();
+        // 設定每 5 分鐘自動刷新
+        setInterval(fetchAnping, 300000);
     </script>
 </body>
 </html>
