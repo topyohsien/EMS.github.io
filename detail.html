@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>海象詳情 - 日期切換版</title>
+    <title>海象詳情 - 終極結構適應版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --bg: #0a192f; --card: #172a45; --highlight: #64ffda; --text: #e6f1ff; }
@@ -11,27 +11,186 @@
         .card { background: var(--card); border-radius: 12px; padding: 15px; border: 1px solid #233554; margin-bottom: 15px; }
         .highlight { color: var(--highlight); font-weight: bold; }
         .nav-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .back-link { color: var(--highlight); text-decoration: none; font-weight: bold; }
-        
-        /* 日期選擇器樣式 */
-        .date-picker-container { display: flex; align-items: center; gap: 10px; background: #1d3557; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--highlight); }
-        #date-select { background: transparent; color: var(--highlight); border: none; font-size: 1rem; font-weight: bold; cursor: pointer; outline: none; }
-        
+        .back-link { color: var(--highlight); text-decoration: none; font-weight: bold; border: 1px solid var(--highlight); padding: 5px 10px; border-radius: 6px; font-size: 14px; }
+        .date-picker-container { background: #1d3557; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--highlight); }
+        #date-select { background: transparent; color: var(--highlight); border: none; font-size: 16px; font-weight: bold; outline: none; color-scheme: dark; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px 8px; border-bottom: 1px solid #233554; text-align: center; font-size: 13px; }
         th { color: var(--highlight); background: #1d3557; }
         .hot { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; font-weight: bold; }
-        canvas { max-height: 200px; width: 100% !important; }
+        canvas { max-height: 220px; width: 100% !important; }
+        #debug-log { font-size: 10px; color: #8892b0; margin-top: 10px; font-family: monospace; }
     </style>
 </head>
 <body>
     <div class="nav-header">
-        <a href="index.html" class="back-link">← 返回地圖</a>
+        <a href="map.html" class="back-link">← 返回地圖</a>
         <div class="date-picker-container">
             <input type="date" id="date-select">
         </div>
     </div>
     
     <div class="card">
-        <div id="status-title" class="highlight" style="font-size:1.1rem;">📍 正在載入資料...</div>
-        <div id="bite-hint" style="
+        <div id="status-title" class="highlight" style="font-size:1.1rem;">🔍 正在掃描 API 結構...</div>
+        <div id="bite-hint" style="margin-top:10px; font-size:0.9rem;">咬況分析：等待診斷完成...</div>
+        <div id="debug-log"></div>
+    </div>
+
+    <div class="card"><canvas id="tideChart"></canvas></div>
+
+    <table>
+        <thead><tr><th>時間</th><th>潮高</th><th>類型</th><th>路亞熱點</th></tr></thead>
+        <tbody id="tide-table"></tbody>
+    </table>
+
+    <script>
+        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
+        const dateInput = document.getElementById('date-select');
+        const logEl = document.getElementById('debug-log');
+        
+        dateInput.value = new Date().toLocaleDateString('sv-SE');
+
+        const params = new URLSearchParams(window.location.search);
+        const uLat = parseFloat(params.get('lat'));
+        const uLng = parseFloat(params.get('lng'));
+
+        let finalStationList = [];
+
+        // 核心邏輯：深度掃描 JSON 物件，找出包含特定關鍵字的陣列
+        function findArrayByKey(obj, keyName) {
+            if (obj && typeof obj === 'object') {
+                if (Array.isArray(obj)) {
+                    for (let item of obj) {
+                        const found = findArrayByKey(item, keyName);
+                        if (found) return found;
+                    }
+                } else {
+                    if (obj.hasOwnProperty(keyName) && Array.isArray(obj[keyName])) return obj[keyName];
+                    for (let k in obj) {
+                        const found = findArrayByKey(obj[k], keyName);
+                        if (found) return found;
+                    }
+                }
+            }
+            return null;
+        }
+
+        async function startDiagnosis() {
+            try {
+                logEl.innerText = "Step 1: 抓取原始 JSON 資料...";
+                const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
+                const raw = await res.json();
+                
+                logEl.innerText += "\nStep 2: 自動偵測資料層級...";
+                // 優先尋找截圖中顯示的 TideForecasts 陣列
+                let stations = findArrayByKey(raw, 'TideForecasts') || findArrayByKey(raw, 'location') || findArrayByKey(raw, 'Location');
+                
+                if (!stations) throw new Error("無法在 API 中定位測站陣列");
+                
+                finalStationList = stations;
+                logEl.innerText += `\nStep 3: 掃描完成，找到 ${stations.length} 個站點。`;
+                
+                updateView();
+            } catch (err) {
+                document.getElementById('status-title').innerHTML = `<span style="color:#ff6b6b;">❌ 診斷失敗: ${err.message}</span>`;
+                logEl.innerText += `\nError: ${err.stack}`;
+            }
+        }
+
+        function updateView() {
+            if (!finalStationList.length) return;
+
+            const selectedDate = dateInput.value;
+            let target = null;
+
+            // 匹配最近站點
+            if (!isNaN(uLat) && !isNaN(uLng)) {
+                let minDis = Infinity;
+                finalStationList.forEach(item => {
+                    // 兼容不同層級的座標欄位
+                    const loc = item.Location || item;
+                    const sLat = loc.Latitude || loc.latitude;
+                    const sLng = loc.Longitude || loc.longitude;
+                    const dis = Math.sqrt(Math.pow(sLat - uLat, 2) + Math.pow(sLng - uLng, 2));
+                    if (dis < minDis) {
+                        minDis = dis;
+                        target = item;
+                    }
+                });
+            } else {
+                target = finalStationList.find(i => JSON.stringify(i).includes("安平"));
+            }
+
+            try {
+                const locObj = target.Location || target;
+                const dailyArr = findArrayByKey(locObj, 'Daily') || findArrayByKey(locObj, 'TimePeriods');
+                const dayData = dailyArr.find(d => d.Date === selectedDate || d.date === selectedDate);
+                
+                if (!dayData) throw new Error("該日期無資料");
+
+                const timePoints = dayData.Time || dayData.time;
+                const heights = timePoints.map(t => {
+                    // 自動尋找數值欄位
+                    const h = t.TideHeights?.AboveChartDatum ?? t.tideHeight ?? t.height;
+                    return parseInt(h);
+                });
+
+                const diff = Math.max(...heights) - Math.min(...heights);
+                const stationName = locObj.LocationName || locObj.stationName || "未知測站";
+
+                document.getElementById('status-title').innerText = `📍 ${stationName} (${dayData.TideRange || '一般'}潮)`;
+                document.getElementById('bite-hint').innerHTML = `潮差: ${diff}cm | 咬況: <span class="highlight">${diff > 100 ? '🔥 大潮活躍' : '🎣 穩定小潮'}</span>`;
+
+                renderChart(timePoints, heights);
+                renderTable(timePoints);
+            } catch (err) {
+                document.getElementById('status-title').innerText = `🚫 匹配失敗: ${err.message}`;
+            }
+        }
+
+        function renderChart(list, heightData) {
+            const labels = list.map(d => (d.DateTime || d.dateTime || d.time).split('T')[1].substring(0, 5));
+            const ctx = document.getElementById('tideChart').getContext('2d');
+            if (window.myChart) window.myChart.destroy();
+            window.myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: heightData,
+                        borderColor: '#64ffda',
+                        backgroundColor: 'rgba(100, 255, 218, 0.1)',
+                        fill: true, tension: 0.4
+                    }]
+                },
+                options: {
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { grid: { color: '#233554' }, ticks: { color: '#8892b0' } },
+                        x: { ticks: { color: '#8892b0' } }
+                    }
+                }
+            });
+        }
+
+        function renderTable(list) {
+            document.getElementById('tide-table').innerHTML = list.map(d => {
+                const time = (d.DateTime || d.dateTime || d.time).split('T')[1].substring(0, 5);
+                const h = d.TideHeights?.AboveChartDatum ?? d.tideHeight ?? d.height;
+                const type = d.Tide || d.tide || "一般";
+                const hour = parseInt(time.split(':')[0]);
+                const isGolden = (hour >= 5 && hour <= 7) || (hour >= 17 && hour <= 19);
+                return `<tr class="${isGolden ? 'hot' : ''}">
+                    <td>${time}</td>
+                    <td>${h}cm</td>
+                    <td>${type}</td>
+                    <td>${isGolden ? '🔥 黃金時段' : '-'}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        dateInput.addEventListener('change', updateView);
+        startDiagnosis();
+    </script>
+</body>
+</html>
