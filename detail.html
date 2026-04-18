@@ -19,20 +19,21 @@
         th { color: var(--highlight); background: #1d3557; }
         .hot { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; font-weight: bold; }
         canvas { max-height: 220px; width: 100% !important; }
-        #debug-log { font-size: 10px; color: #8892b0; margin-top: 10px; font-family: monospace; }
+        .note-card { font-size: 12px; color: #8892b0; line-height: 1.6; }
+        #debug-log { font-size: 10px; color: #8892b0; margin-top: 10px; font-family: monospace; display: none; }
     </style>
 </head>
 <body>
     <div class="nav-header">
-        <a href="map.html" class="back-link">← 返回地圖</a>
+        <a href="index.html" class="back-link">← 返回地圖</a>
         <div class="date-picker-container">
             <input type="date" id="date-select">
         </div>
     </div>
     
     <div class="card">
-        <div id="status-title" class="highlight" style="font-size:1.1rem;">🔍 正在掃描 API 結構...</div>
-        <div id="bite-hint" style="margin-top:10px; font-size:0.9rem;">咬況分析：等待診斷完成...</div>
+        <div id="status-title" class="highlight" style="font-size:1.1rem;">🔍 正在讀取資料...</div>
+        <div id="bite-hint" style="margin-top:10px; font-size:0.9rem;">咬況分析：計算中...</div>
         <div id="debug-log"></div>
     </div>
 
@@ -43,20 +44,30 @@
         <tbody id="tide-table"></tbody>
     </table>
 
+    <div class="card note-card">
+        <div class="highlight" style="margin-bottom: 5px;">💡 備註：路亞熱點判斷邏輯</div>
+        本系統之「路亞熱點」判斷基準為：<br>
+        1. **黃金時段**：結合日出/日落前後的「晨昏變換」時段（清晨 05:00-07:00 與傍晚 17:00-19:00），此時掠食魚種活性最高。<br>
+        2. **乾滿潮交替**：針對潮水起伏帶動的流速變化，標示出最佳拋投契機。<br>
+        請釣友注意安全，預報僅供參考，實際咬況受水溫、風向及現場流速影響。
+    </div>
+
     <script>
         const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
         const dateInput = document.getElementById('date-select');
         const logEl = document.getElementById('debug-log');
         
-        dateInput.value = new Date().toLocaleDateString('sv-SE');
+        // 預設今天
+        const todayStr = new Date().toLocaleDateString('sv-SE');
+        dateInput.value = todayStr;
 
         const params = new URLSearchParams(window.location.search);
         const uLat = parseFloat(params.get('lat'));
         const uLng = parseFloat(params.get('lng'));
 
         let finalStationList = [];
+        let dateRange = { min: "", max: "" };
 
-        // 核心邏輯：深度掃描 JSON 物件，找出包含特定關鍵字的陣列
         function findArrayByKey(obj, keyName) {
             if (obj && typeof obj === 'object') {
                 if (Array.isArray(obj)) {
@@ -77,23 +88,27 @@
 
         async function startDiagnosis() {
             try {
-                logEl.innerText = "Step 1: 抓取原始 JSON 資料...";
                 const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
                 const raw = await res.json();
                 
-                logEl.innerText += "\nStep 2: 自動偵測資料層級...";
-                // 優先尋找截圖中顯示的 TideForecasts 陣列
                 let stations = findArrayByKey(raw, 'TideForecasts') || findArrayByKey(raw, 'location') || findArrayByKey(raw, 'Location');
-                
-                if (!stations) throw new Error("無法在 API 中定位測站陣列");
+                if (!stations) throw new Error("無法定位測站陣列");
                 
                 finalStationList = stations;
-                logEl.innerText += `\nStep 3: 掃描完成，找到 ${stations.length} 個站點。`;
+
+                // 獲取 API 的日期範圍限制
+                const firstStation = stations[0];
+                const dailyArr = findArrayByKey(firstStation, 'Daily') || findArrayByKey(firstStation, 'TimePeriods');
+                if (dailyArr && dailyArr.length > 0) {
+                    dateRange.min = dailyArr[0].Date || dailyArr[0].date;
+                    dateRange.max = dailyArr[dailyArr.length - 1].Date || dailyArr[dailyArr.length - 1].date;
+                    dateInput.min = dateRange.min;
+                    dateInput.max = dateRange.max;
+                }
                 
                 updateView();
             } catch (err) {
-                document.getElementById('status-title').innerHTML = `<span style="color:#ff6b6b;">❌ 診斷失敗: ${err.message}</span>`;
-                logEl.innerText += `\nError: ${err.stack}`;
+                document.getElementById('status-title').innerHTML = `<span style="color:#ff6b6b;">❌ 讀取失敗: ${err.message}</span>`;
             }
         }
 
@@ -101,13 +116,19 @@
             if (!finalStationList.length) return;
 
             const selectedDate = dateInput.value;
-            let target = null;
 
-            // 匹配最近站點
+            // 日期超限檢查
+            if (selectedDate < dateRange.min || selectedDate > dateRange.max) {
+                alert(`選擇日期超出預報範圍！\n目前可供查詢：${dateRange.min} 至 ${dateRange.max}`);
+                dateInput.value = (selectedDate < dateRange.min) ? dateRange.min : dateRange.max;
+                updateView(); // 修正日期後重新更新
+                return;
+            }
+
+            let target = null;
             if (!isNaN(uLat) && !isNaN(uLng)) {
                 let minDis = Infinity;
                 finalStationList.forEach(item => {
-                    // 兼容不同層級的座標欄位
                     const loc = item.Location || item;
                     const sLat = loc.Latitude || loc.latitude;
                     const sLng = loc.Longitude || loc.longitude;
@@ -126,11 +147,10 @@
                 const dailyArr = findArrayByKey(locObj, 'Daily') || findArrayByKey(locObj, 'TimePeriods');
                 const dayData = dailyArr.find(d => d.Date === selectedDate || d.date === selectedDate);
                 
-                if (!dayData) throw new Error("該日期無資料");
+                if (!dayData) throw new Error("該日期無預報資料");
 
                 const timePoints = dayData.Time || dayData.time;
                 const heights = timePoints.map(t => {
-                    // 自動尋找數值欄位
                     const h = t.TideHeights?.AboveChartDatum ?? t.tideHeight ?? t.height;
                     return parseInt(h);
                 });
@@ -144,7 +164,7 @@
                 renderChart(timePoints, heights);
                 renderTable(timePoints);
             } catch (err) {
-                document.getElementById('status-title').innerText = `🚫 匹配失敗: ${err.message}`;
+                document.getElementById('status-title').innerText = `🚫 錯誤: ${err.message}`;
             }
         }
 
@@ -189,7 +209,11 @@
             }).join('');
         }
 
-        dateInput.addEventListener('change', updateView);
+        // 日期變動監聽器：選擇後立即更新
+        dateInput.addEventListener('change', () => {
+            updateView();
+        });
+
         startDiagnosis();
     </script>
 </body>
