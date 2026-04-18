@@ -3,13 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>海象詳情 - 自動測站匹配版</title>
+    <title>海象詳情 - 日期切換版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --bg: #0a192f; --card: #172a45; --highlight: #64ffda; --text: #e6f1ff; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 15px; margin: 0; }
-        .card { background: var(--card); border-radius: 12px; padding: 15px; border: 1px solid #233554; margin-bottom: 20px; }
+        .card { background: var(--card); border-radius: 12px; padding: 15px; border: 1px solid #233554; margin-bottom: 15px; }
         .highlight { color: var(--highlight); font-weight: bold; }
+        .nav-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .back-link { color: var(--highlight); text-decoration: none; font-weight: bold; }
+        
+        /* 日期選擇器樣式 */
+        .date-picker-container { display: flex; align-items: center; gap: 10px; background: #1d3557; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--highlight); }
+        #date-select { background: transparent; color: var(--highlight); border: none; font-size: 1rem; font-weight: bold; cursor: pointer; outline: none; }
+        
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px 8px; border-bottom: 1px solid #233554; text-align: center; font-size: 13px; }
         th { color: var(--highlight); background: #1d3557; }
@@ -18,113 +25,13 @@
     </style>
 </head>
 <body>
-    <div style="margin-bottom:15px;"><a href="index.html" style="color:var(--highlight); text-decoration:none; font-weight:bold;">← 返回地圖</a></div>
+    <div class="nav-header">
+        <a href="index.html" class="back-link">← 返回地圖</a>
+        <div class="date-picker-container">
+            <input type="date" id="date-select">
+        </div>
+    </div>
     
     <div class="card">
-        <div id="status-title" class="highlight" style="font-size:1.1rem;">📍 正在搜尋最近測站...</div>
-        <div id="bite-hint" style="margin-top:10px; font-size:0.9rem;">咬況預估：分析中...</div>
-    </div>
-
-    <div class="card"><canvas id="tideChart"></canvas></div>
-
-    <table>
-        <thead><tr><th>時間</th><th>潮高</th><th>類型</th><th>路亞熱點</th></tr></thead>
-        <tbody id="tide-table"></tbody>
-    </table>
-
-    <script>
-        const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
-        const todayStr = new Date().toLocaleDateString('zh-TW', {year:'numeric', month:'2-digit', day:'2-digit'}).replace(/\//g, '-');
-
-        // 1. 從 URL 取得座標
-        const params = new URLSearchParams(window.location.search);
-        const uLat = parseFloat(params.get('lat'));
-        const uLng = parseFloat(params.get('lng'));
-
-        async function fetchTide() {
-            try {
-                const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
-                const data = await res.json();
-                const allForecasts = data.records.TideForecasts;
-                
-                let targetStation = null;
-
-                // 2. 自動匹配邏輯
-                if (!isNaN(uLat) && !isNaN(uLng)) {
-                    // 尋找距離點擊位置最近的測站
-                    let minDistance = Infinity;
-                    allForecasts.forEach(item => {
-                        const sLat = item.Location.Latitude;
-                        const sLng = item.Location.Longitude;
-                        const dist = Math.sqrt(Math.pow(sLat - uLat, 2) + Math.pow(sLng - uLng, 2));
-                        if (dist < minDistance) {
-                            minDistance = dist;
-                            targetStation = item;
-                        }
-                    });
-                } else {
-                    // 預設安平
-                    targetStation = allForecasts.find(item => item.Location.LocationName.includes("安平"));
-                }
-
-                if (!targetStation) throw new Error("找不到對應測站");
-
-                const dailyList = targetStation.Location.TimePeriods.Daily;
-                const todayData = dailyList.find(d => d.Date === todayStr);
-                if (!todayData) throw new Error("今日無預報資料");
-
-                const timePoints = todayData.Time;
-                const hArr = timePoints.map(t => t.TideHeights.AboveChartDatum);
-                const diff = Math.max(...hArr) - Math.min(...hArr);
-
-                document.getElementById('status-title').innerText = `📍 ${targetStation.Location.LocationName} (${todayData.TideRange}潮)`;
-                document.getElementById('bite-hint').innerHTML = `今日潮差: ${diff}cm | 咬況: <span class="highlight">${diff > 100 ? '🔥 大潮活躍' : '🎣 穩定小潮'}</span>`;
-
-                render(timePoints);
-            } catch (err) {
-                document.getElementById('tide-table').innerHTML = `<tr><td colspan="4" style="color:#ff6b6b;">❌ ${err.message}</td></tr>`;
-            }
-        }
-
-        function render(list) {
-            const labels = list.map(d => d.DateTime.split('T')[1].substring(0, 5));
-            const heights = list.map(d => d.TideHeights.AboveChartDatum);
-
-            if (window.myChart) window.myChart.destroy();
-            window.myChart = new Chart(document.getElementById('tideChart'), {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: '潮高(cm)',
-                        data: heights,
-                        borderColor: '#64ffda',
-                        backgroundColor: 'rgba(100, 255, 218, 0.1)',
-                        fill: true, tension: 0.4
-                    }]
-                },
-                options: { 
-                    plugins: { legend: { display: false } },
-                    scales: { 
-                        y: { grid: {color: '#233554'}, ticks: {color: '#8892b0'} }, 
-                        x: { ticks: {color: '#8892b0'} } 
-                    }
-                }
-            });
-
-            document.getElementById('tide-table').innerHTML = list.map(d => {
-                const time = d.DateTime.split('T')[1].substring(0, 5);
-                const hour = parseInt(time.split(':')[0]);
-                const isGolden = (hour >= 5 && hour <= 7) || (hour >= 17 && hour <= 19);
-                return `<tr class="${isGolden ? 'hot' : ''}">
-                    <td>${time}</td>
-                    <td>${d.TideHeights.AboveChartDatum}cm</td>
-                    <td>${d.Tide}</td>
-                    <td>${isGolden ? '🔥 黃金時段' : '-'}</td>
-                </tr>`;
-            }).join('');
-        }
-        fetchTide();
-    </script>
-</body>
-</html>
+        <div id="status-title" class="highlight" style="font-size:1.1rem;">📍 正在載入資料...</div>
+        <div id="bite-hint" style="
