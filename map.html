@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>安平釣點地圖工具</title>
+    <title>釣點地圖工具 - 座標傳遞版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --bg: #0a192f; --card: #172a45; --highlight: #64ffda; --text: #e6f1ff; }
@@ -25,22 +25,23 @@
 
         map.on('contextmenu', e => {
             const { lat, lng } = e.latlng;
+            // 關鍵修改：在 href 加入 ?lat=${lat}&lng=${lng}
             const popupHtml = `
                 <div class="info-title">GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
                 <div id="sun-box">🌅 日出 讀取中...</div>
                 <div id="weather-box">📡 氣象 讀取中...</div>
-                <a href="detail.html" class="detail-btn">🌊 查看詳細潮汐與咬況</a>
+                <a href="detail.html?lat=${lat}&lng=${lng}" class="detail-btn">🌊 查看詳細潮汐與咬況</a>
             `;
             L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
 
-            // 1. 日出預報
+            // 日出請求
             fetch(`https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&formatted=0`)
                 .then(res => res.json()).then(d => {
                     const sunrise = new Date(d.results.sunrise).toLocaleTimeString('zh-TW', {hour: '2-digit', minute:'2-digit'});
                     document.getElementById('sun-box').innerHTML = `🌅 日出 <span class="val">${sunrise}</span>`;
                 });
 
-            // 2. 安平即時氣象 (O-A0003-001)
+            // 即時氣象
             fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${API_KEY}&stationId=C0X090`)
                 .then(res => res.json()).then(data => {
                     const w = data.records.Station[0].WeatherElement;
