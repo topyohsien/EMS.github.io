@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>海象詳情 - 終極結構適應版</title>
+    <title>海象詳情 - 穩定修復版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --bg: #0a192f; --card: #172a45; --highlight: #64ffda; --text: #e6f1ff; }
@@ -20,7 +20,6 @@
         .hot { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; font-weight: bold; }
         canvas { max-height: 220px; width: 100% !important; }
         .note-card { font-size: 12px; color: #8892b0; line-height: 1.6; }
-        #debug-log { font-size: 10px; color: #8892b0; margin-top: 10px; font-family: monospace; display: none; }
     </style>
 </head>
 <body>
@@ -32,9 +31,8 @@
     </div>
     
     <div class="card">
-        <div id="status-title" class="highlight" style="font-size:1.1rem;">🔍 正在讀取資料...</div>
+        <div id="status-title" class="highlight" style="font-size:1.1rem;">📍 數據載入中...</div>
         <div id="bite-hint" style="margin-top:10px; font-size:0.9rem;">咬況分析：計算中...</div>
-        <div id="debug-log"></div>
     </div>
 
     <div class="card"><canvas id="tideChart"></canvas></div>
@@ -55,18 +53,13 @@
     <script>
         const API_KEY = 'CWA-337BBD8F-DBC8-4D8D-A92F-DAA5B176120A';
         const dateInput = document.getElementById('date-select');
-        const logEl = document.getElementById('debug-log');
-        
-        // 預設今天
-        const todayStr = new Date().toLocaleDateString('sv-SE');
-        dateInput.value = todayStr;
-
         const params = new URLSearchParams(window.location.search);
         const uLat = parseFloat(params.get('lat'));
         const uLng = parseFloat(params.get('lng'));
 
         let finalStationList = [];
         let dateRange = { min: "", max: "" };
+        let isFirstLoad = true;
 
         function findArrayByKey(obj, keyName) {
             if (obj && typeof obj === 'object') {
@@ -86,29 +79,35 @@
             return null;
         }
 
-        async function startDiagnosis() {
+        async function fetchInitialData() {
             try {
                 const res = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization=${API_KEY}`);
                 const raw = await res.json();
                 
-                let stations = findArrayByKey(raw, 'TideForecasts') || findArrayByKey(raw, 'location') || findArrayByKey(raw, 'Location');
-                if (!stations) throw new Error("無法定位測站陣列");
-                
-                finalStationList = stations;
+                finalStationList = findArrayByKey(raw, 'TideForecasts') || findArrayByKey(raw, 'location') || findArrayByKey(raw, 'Location');
+                if (!finalStationList) throw new Error("API 格式異常");
 
-                // 獲取 API 的日期範圍限制
-                const firstStation = stations[0];
-                const dailyArr = findArrayByKey(firstStation, 'Daily') || findArrayByKey(firstStation, 'TimePeriods');
+                // 獲取 API 實際提供的日期範圍
+                const dailyArr = findArrayByKey(finalStationList[0], 'Daily') || findArrayByKey(finalStationList[0], 'TimePeriods');
                 if (dailyArr && dailyArr.length > 0) {
                     dateRange.min = dailyArr[0].Date || dailyArr[0].date;
                     dateRange.max = dailyArr[dailyArr.length - 1].Date || dailyArr[dailyArr.length - 1].date;
+                    
                     dateInput.min = dateRange.min;
                     dateInput.max = dateRange.max;
+
+                    // 重點修復：如果是第一次載入，且系統今天不在 API 範圍內，則強制使用 API 的起始日期
+                    const systemToday = new Date().toLocaleDateString('sv-SE');
+                    if (systemToday < dateRange.min || systemToday > dateRange.max) {
+                        dateInput.value = dateRange.min;
+                    } else {
+                        dateInput.value = systemToday;
+                    }
                 }
                 
                 updateView();
             } catch (err) {
-                document.getElementById('status-title').innerHTML = `<span style="color:#ff6b6b;">❌ 讀取失敗: ${err.message}</span>`;
+                document.getElementById('status-title').innerHTML = `<span style="color:#ff6b6b;">❌ API 連線錯誤</span>`;
             }
         }
 
@@ -117,26 +116,22 @@
 
             const selectedDate = dateInput.value;
 
-            // 日期超限檢查
-            if (selectedDate < dateRange.min || selectedDate > dateRange.max) {
+            // 只有在非第一次載入（使用者手動切換）時才彈出警告
+            if (!isFirstLoad && (selectedDate < dateRange.min || selectedDate > dateRange.max)) {
                 alert(`選擇日期超出預報範圍！\n目前可供查詢：${dateRange.min} 至 ${dateRange.max}`);
                 dateInput.value = (selectedDate < dateRange.min) ? dateRange.min : dateRange.max;
-                updateView(); // 修正日期後重新更新
+                updateView();
                 return;
             }
+            isFirstLoad = false;
 
             let target = null;
             if (!isNaN(uLat) && !isNaN(uLng)) {
                 let minDis = Infinity;
                 finalStationList.forEach(item => {
                     const loc = item.Location || item;
-                    const sLat = loc.Latitude || loc.latitude;
-                    const sLng = loc.Longitude || loc.longitude;
-                    const dis = Math.sqrt(Math.pow(sLat - uLat, 2) + Math.pow(sLng - uLng, 2));
-                    if (dis < minDis) {
-                        minDis = dis;
-                        target = item;
-                    }
+                    const dis = Math.sqrt(Math.pow((loc.Latitude || loc.latitude) - uLat, 2) + Math.pow((loc.Longitude || loc.longitude) - uLng, 2));
+                    if (dis < minDis) { minDis = dis; target = item; }
                 });
             } else {
                 target = finalStationList.find(i => JSON.stringify(i).includes("安平"));
@@ -145,26 +140,21 @@
             try {
                 const locObj = target.Location || target;
                 const dailyArr = findArrayByKey(locObj, 'Daily') || findArrayByKey(locObj, 'TimePeriods');
-                const dayData = dailyArr.find(d => d.Date === selectedDate || d.date === selectedDate);
+                const dayData = dailyArr.find(d => (d.Date || d.date) === selectedDate);
                 
-                if (!dayData) throw new Error("該日期無預報資料");
+                if (!dayData) throw new Error("查無預報資料");
 
                 const timePoints = dayData.Time || dayData.time;
-                const heights = timePoints.map(t => {
-                    const h = t.TideHeights?.AboveChartDatum ?? t.tideHeight ?? t.height;
-                    return parseInt(h);
-                });
-
+                const heights = timePoints.map(t => parseInt(t.TideHeights?.AboveChartDatum ?? t.tideHeight ?? t.height));
                 const diff = Math.max(...heights) - Math.min(...heights);
-                const stationName = locObj.LocationName || locObj.stationName || "未知測站";
 
-                document.getElementById('status-title').innerText = `📍 ${stationName} (${dayData.TideRange || '一般'}潮)`;
+                document.getElementById('status-title').innerText = `📍 ${locObj.LocationName || locObj.stationName} (${dayData.TideRange || '一般'}潮)`;
                 document.getElementById('bite-hint').innerHTML = `潮差: ${diff}cm | 咬況: <span class="highlight">${diff > 100 ? '🔥 大潮活躍' : '🎣 穩定小潮'}</span>`;
 
                 renderChart(timePoints, heights);
                 renderTable(timePoints);
             } catch (err) {
-                document.getElementById('status-title').innerText = `🚫 錯誤: ${err.message}`;
+                document.getElementById('status-title').innerText = `🚫 ${err.message}`;
             }
         }
 
@@ -197,24 +187,21 @@
             document.getElementById('tide-table').innerHTML = list.map(d => {
                 const time = (d.DateTime || d.dateTime || d.time).split('T')[1].substring(0, 5);
                 const h = d.TideHeights?.AboveChartDatum ?? d.tideHeight ?? d.height;
-                const type = d.Tide || d.tide || "一般";
                 const hour = parseInt(time.split(':')[0]);
                 const isGolden = (hour >= 5 && hour <= 7) || (hour >= 17 && hour <= 19);
                 return `<tr class="${isGolden ? 'hot' : ''}">
                     <td>${time}</td>
                     <td>${h}cm</td>
-                    <td>${type}</td>
+                    <td>${d.Tide || d.tide || "一般"}</td>
                     <td>${isGolden ? '🔥 黃金時段' : '-'}</td>
                 </tr>`;
             }).join('');
         }
 
-        // 日期變動監聽器：選擇後立即更新
-        dateInput.addEventListener('change', () => {
-            updateView();
-        });
-
-        startDiagnosis();
+        dateInput.addEventListener('change', updateView);
+        fetchInitialData();
     </script>
 </body>
+</html>
+ody>
 </html>
