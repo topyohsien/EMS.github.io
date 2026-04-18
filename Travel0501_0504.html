@@ -38,3 +38,99 @@
     <span class="weather-title">📡 901/903 氣象海象即時預警 (5/1 - 5/4)</span>
     <div class="weather-grid">
         <div class="weather-item">
+            <b>📍 綠島海域</b><br>
+            風向：偏東風 4-5 級<br>
+            浪高：1.2m - 1.8m<br>
+            ⚠️ 長浪預警：無
+        </div>
+        <div class="weather-item">
+            <b>🌡️ 氣溫預報</b><br>
+            台東：26°C - 31°C<br>
+            綠島：25°C - 30°C<br>
+            降雨率：10% (晴時多雲)
+        </div>
+        <div class="weather-item">
+            <b>🌊 潮汐 (5/2 綠島)</b><br>
+            滿潮：09:45 / 22:10<br>
+            乾潮：03:20 / 15:55<br>
+            *適合晨間溫泉日出
+        </div>
+        <div class="weather-item">
+            <b>⚓ 船班動態</b><br>
+            目前狀態：正常開航<br>
+            *回程逆浪建議服藥
+        </div>
+    </div>
+</div>
+
+<div class="day-tab">
+    <div class="day-header" onclick="toggleDay(this)">
+        <span>5/1 (五) 善化 ➔ 高雄 ➔ 綠島</span>
+        <span>展開 ▼</span>
+    </div>
+    <div class="day-content">
+        <div class="sun-box"><span>🌅 日出 05:22</span> <span>🌇 日落 18:24</span></div>
+        <div class="nav-box">
+            <span style="color: #d62828; font-weight: bold;">🚗 04:10 善化出發</span>
+            <a class="nav-item" href="https://www.google.com/maps/search/高雄火車站停車場">🅿️ 建議停車：高雄車站地下停車場</a>
+            <a class="nav-item" href="https://www.google.com/maps/search/高雄火車站">🚆 05:35 高雄發車 (411次)</a>
+            <a class="nav-item" href="https://www.google.com/maps/search/富岡漁港">🚢 09:00 富岡發船</a>
+            <div class="alert">💊 重要：08:00 記得服用第一劑暈船藥。</div>
+        </div>
+        <div class="fishing-box">
+            <span class="fishing-title">🎣 岸拋路亞推薦釣點</span>
+            <div class="grid">
+                <a class="btn" style="border-color: var(--fishing)" href="https://www.google.com/maps/search/綠島南寮紅燈塔">南寮紅燈塔</a>
+                <a class="btn" style="border-color: var(--fishing)" href="https://www.google.com/maps/search/綠島公館外堤">公館外堤</a>
+            </div>
+        </div>
+        </div>
+</div>
+
+<div class="day-tab">
+    <div class="day-header" onclick="toggleDay(this)">
+        <span>5/2 (六) 朝日溫泉日出 / 根魚釣點</span>
+        <span>展開 ▼</span>
+    </div>
+    <div class="day-content">
+        <div class="sun-box" style="background: #ffe5d9; border-color: var(--accent);">
+            <span>🌅 日出 05:21 (最佳觀賞時機)</span> <span>🌇 日落 18:25</span>
+        </div>
+        <div class="nav-box">
+            <a class="nav-item" href="https://www.google.com/maps/search/綠島朝日溫泉">♨️ 04:30 抵達朝日溫泉</a>
+            <div class="alert">🌙 04:00 出發。適逢乾潮轉滿潮，日出倒影最美。</div>
+        </div>
+        <div class="fishing-box">
+            <span class="fishing-title">🎣 根魚小搞搞推薦</span>
+            <div class="grid">
+                <a class="btn" style="border-color: var(--fishing)" href="https://www.google.com/maps/search/綠島溫泉漁港">溫泉漁港</a>
+                <a class="btn" style="border-color: var(--fishing)" href="https://www.google.com/maps/search/綠島中寮港">中寮港</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="day-tab">
+    <div class="day-header" onclick="toggleDay(this)">
+        <span>5/3 & 5/4 返回台東與賦歸</span>
+        <span>展開 ▼</span>
+    </div>
+    <div class="day-content">
+        <div class="nav-box">
+            <a class="nav-item" href="#">🚢 5/3 16:30 綠島發車 (逆浪請服藥)</a>
+            <a class="nav-item" href="#">🚆 5/4 16:00 台東發車 (168次)</a>
+            <span style="color: #d62828; font-weight: bold;">🚗 預計 19:15 回到善化</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleDay(header) {
+        const content = header.nextElementSibling;
+        content.classList.toggle('active');
+        header.querySelector('span:last-child').innerText = content.classList.contains('active') ? '收合 ▲' : '展開 ▼';
+    }
+</script>
+
+</body>
+</html>
